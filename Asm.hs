@@ -1,5 +1,7 @@
 module Main where
 
+import qualified Data.ByteString.Lazy.Char8 as B
+
 import Control.Monad (liftM, mapM_, forM_)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans
@@ -70,6 +72,7 @@ data Registers = Registers
                } deriving (Show)
 
 initialRs :: Registers
+{-# INLINE initialRs #-}
 initialRs = Registers
             { r1 = 0
             , r2 = 0
@@ -93,6 +96,7 @@ execute rs code = execStateT (exec code) rs
    exec []                           = return ()
 
 execOP :: Operator -> Operand -> Operand -> CPU ()
+{-# INLINE execOP #-}
 execOP ADD   src dst = arith ADD   src dst
 execOP SUB   src dst = arith SUB   src dst
 execOP MUL   src dst = arith MUL   src dst
@@ -106,6 +110,7 @@ execOP MOV   src dst = readVal src >>= \v -> putVal v dst
 execOP PRN   src _   = readVal src >>= \v -> liftIO $ putStrLn $ show v 
 
 arith :: Operator -> Operand -> Operand -> CPU ()
+{-# INLINE arith #-}
 arith op src dst = do
     v1 <- readVal src
     v2 <- readVal dst
@@ -116,6 +121,7 @@ arith op src dst = do
        DIV -> putVal (v2 / v1) dst
 
 logic :: Operator -> Operand -> Operand -> CPU ()
+{-# INLINE logic #-}
 logic op src dst = do
      v1 <- readVal src
      v2 <- readVal dst
@@ -126,12 +132,18 @@ logic op src dst = do
         OR    -> putVal (fromBool $ toBool v1 && toBool v2) dst
         NOT   -> putVal (fromBool . not . toBool $ v1) dst
 
+fromBool :: Bool -> Double
+{-# INLINE fromBool #-}
 fromBool True  = 1
 fromBool False = 0
-toBool x | x == 0    = False
-         | otherwise = True
+
+toBool :: Double -> Bool
+{-# INLINE toBool #-}
+toBool 0 = False
+toBool _ = True
 
 readVal :: Operand -> CPU Double
+{-# INLINE readVal #-}
 readVal (R R1) = gets r1
 readVal (R R2) = gets r2
 readVal (R R3) = gets r3
@@ -141,7 +153,7 @@ readVal (R R6) = gets r6
 readVal (V v)  = return $ v
 
 putVal :: Double -> Operand -> CPU ()
-putVal v (R R1) = modify $ \s -> s { r1 = v }
+{-# INLINE putVal #-}
 putVal v (R R2) = modify $ \s -> s { r2 = v }
 putVal v (R R3) = modify $ \s -> s { r3 = v }
 putVal v (R R4) = modify $ \s -> s { r4 = v }
@@ -155,7 +167,6 @@ putVal v (R R6) = modify $ \s -> s { r6 = v }
 -- Inputs:  r1 - value to calculate square root from
 --          r2 - number of iterations
 -- Outputs: r6 - output value
-
 heron :: ASM ()
 heron = do
    op MOV (V 1) R5
@@ -180,6 +191,5 @@ heron = do
 main :: IO ()
 main = do
   let h = compile heron
-  input <- liftM (map read . words) $ hGetContents stdin
+  input <- liftM (map (read . B.unpack) . B.words) $ B.hGetContents stdin
   forM_ input $ \i -> execute (initialRs {r1 = i, r2 = 10 }) h 
-  return ()
