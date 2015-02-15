@@ -1,8 +1,10 @@
-module Asm where
+module Main where
 
-import Control.Monad (liftM, mapM_)
-import Control.Monad.Trans.State
+import Control.Monad (liftM, mapM_, forM_)
+import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans
+
+import System.IO
 
 -- | Definitions
 
@@ -172,3 +174,12 @@ heron = do
    loopEnd <- pos
    putOp ifFalse JMT R4 (I loopEnd)
    op PRN R6 ()
+
+
+-- | Test
+main :: IO ()
+main = do
+  let h = compile heron
+  input <- liftM (map read . words) $ hGetContents stdin
+  forM_ input $ \i -> execute (initialRs {r1 = i, r2 = 10 }) h 
+  return ()
