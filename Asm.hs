@@ -3,8 +3,7 @@ module Main where
 import qualified Data.ByteString.Char8 as B
 
 import Control.Monad (liftM, mapM_, forM_)
-import Control.Monad.Trans (liftIO)
-import Control.Monad.Trans.State.Strict
+import Control.Monad.State
 
 import System.IO
 
