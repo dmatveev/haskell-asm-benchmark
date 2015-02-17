@@ -198,4 +198,4 @@ main :: IO ()
 main = do
   let h = compile heron
   input <- {-# SCC "READ" #-} liftM (map (read . B.unpack) . B.words) $ B.hGetContents stdin
-  forM_ input $ \i -> {-# SCC "ITER" #-} execute (initialRs {r1 = i, r2 = 10 }) h 
+  forM_ input $ \i -> {-# SCC "ITER" #-} execute (initialRs {r1 = i, r2 = 20 }) h 
