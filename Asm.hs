@@ -1,10 +1,13 @@
+{-# LANGUAGE RankNTypes #-}
+
 module Main where
 
 import qualified Data.ByteString.Char8 as B
 
 import Control.Monad (liftM, mapM_, forM_)
-import Control.Monad.Trans (liftIO)
-import Control.Monad.Trans.State.Strict
+import Control.ContStuff (liftIO)
+import Control.ContStuff.Simple
+import Control.ContStuff.Monads
 
 import System.IO
 
@@ -40,10 +43,10 @@ type Instruction = (Operator, Operand, Operand)
 
 -- | Monad for programming instructions 
 
-type ASM a = State [Instruction] a
+type ASM a = State [Instruction] [Instruction] a
 
 compile :: ASM a -> [Instruction]
-compile c = execState c []
+compile c = execState [] c
 
 op :: (OperandClass s, OperandClass d) => Operator -> s -> d -> ASM ()
 op cmd src dst = modify $ \s -> s ++ [(cmd, toOperand src, toOperand dst)]
@@ -85,7 +88,7 @@ initialRs = Registers
 type CPU a = StateT Registers IO a
 
 execute ::Registers -> [Instruction] -> IO Registers
-execute rs code = execStateT (exec code) rs
+execute rs code = execStateT rs (exec code)
   where
    {-# INLINE exec #-}
    exec ((JMP, I pos, _    ):is) = {-# SCC "JMP" #-} exec $! drop pos code
@@ -146,6 +149,8 @@ toBool :: Double -> Bool
 {-# INLINE toBool #-}
 toBool 0 = False
 toBool _ = True
+
+gets f = liftM f get
 
 readVal :: Operand -> CPU Double
 {-# INLINE readVal #-}
