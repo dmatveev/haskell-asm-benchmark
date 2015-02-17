@@ -1,10 +1,10 @@
 module Main where
 
-import qualified Data.ByteString.Lazy.Char8 as B
+import qualified Data.ByteString.Char8 as B
 
 import Control.Monad (liftM, mapM_, forM_)
+import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.State.Strict
-import Control.Monad.Trans
 
 import System.IO
 
@@ -197,5 +197,5 @@ heron = do
 main :: IO ()
 main = do
   let h = compile heron
-  input <- liftM (map (read . B.unpack) . B.words) $ B.hGetContents stdin
-  forM_ input $ \i -> execute (initialRs {r1 = i, r2 = 10 }) h 
+  input <- {-# SCC "READ" #-} liftM (map (read . B.unpack) . B.words) $ B.hGetContents stdin
+  forM_ input $ \i -> {-# SCC "ITER" #-} execute (initialRs {r1 = i, r2 = 10 }) h 
