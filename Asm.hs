@@ -49,7 +49,7 @@ op :: (OperandClass s, OperandClass d) => Operator -> s -> d -> ASM ()
 op cmd src dst = modify $ \s -> s ++ [(cmd, toOperand src, toOperand dst)]
 
 pos :: ASM Int
-pos = liftM length $ get
+pos = liftM length get
 
 nop :: ASM Int
 nop = do { p <- pos; op NOP () (); return p}
@@ -57,8 +57,8 @@ nop = do { p <- pos; op NOP () (); return p}
 putOp :: (OperandClass s, OperandClass d) => Int -> Operator -> s -> d -> ASM ()
 putOp p cmd src dst = do
     let instr = (cmd, toOperand src, toOperand dst)
-    (before,after) <- liftM (splitAt p) $ get 
-    put $ before ++ instr:(tail after)
+    (before,after) <- liftM (splitAt p) get 
+    put $ before ++ instr : tail after
 
 -- | Monad for executing instructions
 
@@ -87,17 +87,17 @@ type CPU a = StateT Registers IO a
 execute ::Registers -> [Instruction] -> IO Registers
 execute rs code = execStateT (exec code) rs
   where
-   exec ((JMP, (I pos), _      ):is) = {-# SCC "JMP" #-} exec $ drop pos code
-   exec ((JMF, reg,     (I pos)):is) = {-# SCC "JMF" #-} readVal reg >>= \v ->
-                                                         exec $ if toBool v
-                                                                then is
-                                                                else drop pos code
-   exec ((JMT, reg,     (I pos)):is) = {-# SCC "JMT" #-} readVal reg >>= \v ->
-                                                         exec $ if toBool v
-                                                                then drop pos code
-                                                                else is
-   exec ((ins, src,     dst    ):is) = {-# SCC "OP"  #-} execOP ins src dst >> exec is
-   exec []                           = return ()
+   exec ((JMP, I pos, _    ):is) = {-# SCC "JMP" #-} exec $ drop pos code
+   exec ((JMF,   reg, I pos):is) = {-# SCC "JMF" #-} readVal reg >>= \v ->
+                                                     exec $ if toBool v
+                                                            then is
+                                                            else drop pos code
+   exec ((JMT,   reg, I pos):is) = {-# SCC "JMT" #-} readVal reg >>= \v ->
+                                                     exec $ if toBool v
+                                                            then drop pos code
+                                                            else is
+   exec ((ins,   src,   dst):is) = {-# SCC "OP"  #-} execOP ins src dst >> exec is
+   exec []                       = return ()
 
 execOP :: Operator -> Operand -> Operand -> CPU ()
 {-# INLINE execOP #-}
@@ -111,7 +111,7 @@ execOP AND   src dst = {-# SCC "AND"   #-} logic AND   src dst
 execOP OR    src dst = {-# SCC "OR"    #-} logic OR    src dst
 execOP NOT   src dst = {-# SCC "NOT"   #-} logic NOT   src dst
 execOP MOV   src dst = {-# SCC "MOV"   #-} readVal src >>= \v -> putVal v dst
-execOP PRN   src _   = {-# SCC "PRN"   #-} readVal src >>= \v -> liftIO $ putStrLn $ show v 
+execOP PRN   src _   = {-# SCC "PRN"   #-} readVal src >>= \v -> liftIO $ print v 
 
 arith :: Operator -> Operand -> Operand -> CPU ()
 {-# INLINE arith #-}
@@ -154,7 +154,7 @@ readVal (R R3) = gets r3
 readVal (R R4) = gets r4
 readVal (R R5) = gets r5
 readVal (R R6) = gets r6
-readVal (V v)  = return $ v
+readVal (V v)  = return v
 
 putVal :: Double -> Operand -> CPU ()
 {-# INLINE putVal #-}
