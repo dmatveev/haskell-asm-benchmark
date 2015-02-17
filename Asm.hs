@@ -87,27 +87,31 @@ type CPU a = StateT Registers IO a
 execute ::Registers -> [Instruction] -> IO Registers
 execute rs code = execStateT (exec code) rs
   where
-   exec ((JMP, (I pos), _      ):is) = exec (drop pos code)
-   exec ((JMF, reg,     (I pos)):is) = readVal reg >>= \v ->
-                                       exec $ if toBool v then is else (drop pos code)
-   exec ((JMT, reg,     (I pos)):is) = readVal reg >>= \v ->
-                                       exec $ if toBool v then (drop pos code) else is
-   exec ((ins, src,     dst    ):is) = execOP ins src dst >> exec is
+   exec ((JMP, (I pos), _      ):is) = {-# SCC "JMP" #-} exec $ drop pos code
+   exec ((JMF, reg,     (I pos)):is) = {-# SCC "JMF" #-} readVal reg >>= \v ->
+                                                         exec $ if toBool v
+                                                                then is
+                                                                else drop pos code
+   exec ((JMT, reg,     (I pos)):is) = {-# SCC "JMT" #-} readVal reg >>= \v ->
+                                                         exec $ if toBool v
+                                                                then drop pos code
+                                                                else is
+   exec ((ins, src,     dst    ):is) = {-# SCC "OP"  #-} execOP ins src dst >> exec is
    exec []                           = return ()
 
 execOP :: Operator -> Operand -> Operand -> CPU ()
 {-# INLINE execOP #-}
-execOP ADD   src dst = arith ADD   src dst
-execOP SUB   src dst = arith SUB   src dst
-execOP MUL   src dst = arith MUL   src dst
-execOP DIV   src dst = arith DIV   src dst
-execOP LESS  src dst = logic LESS  src dst
-execOP EQUAL src dst = logic EQUAL src dst
-execOP AND   src dst = logic AND   src dst
-execOP OR    src dst = logic OR    src dst
-execOP NOT   src dst = logic NOT   src dst
-execOP MOV   src dst = readVal src >>= \v -> putVal v dst
-execOP PRN   src _   = readVal src >>= \v -> liftIO $ putStrLn $ show v 
+execOP ADD   src dst = {-# SCC "ADD"   #-} arith ADD   src dst
+execOP SUB   src dst = {-# SCC "SUB"   #-} arith SUB   src dst
+execOP MUL   src dst = {-# SCC "MUL"   #-} arith MUL   src dst
+execOP DIV   src dst = {-# SCC "DIV"   #-} arith DIV   src dst
+execOP LESS  src dst = {-# SCC "LESS"  #-} logic LESS  src dst
+execOP EQUAL src dst = {-# SCC "EQUAL" #-} logic EQUAL src dst
+execOP AND   src dst = {-# SCC "AND"   #-} logic AND   src dst
+execOP OR    src dst = {-# SCC "OR"    #-} logic OR    src dst
+execOP NOT   src dst = {-# SCC "NOT"   #-} logic NOT   src dst
+execOP MOV   src dst = {-# SCC "MOV"   #-} readVal src >>= \v -> putVal v dst
+execOP PRN   src _   = {-# SCC "PRN"   #-} readVal src >>= \v -> liftIO $ putStrLn $ show v 
 
 arith :: Operator -> Operand -> Operand -> CPU ()
 {-# INLINE arith #-}
@@ -154,11 +158,12 @@ readVal (V v)  = return $ v
 
 putVal :: Double -> Operand -> CPU ()
 {-# INLINE putVal #-}
-putVal v (R R2) = modify $ \s -> s { r2 = v }
-putVal v (R R3) = modify $ \s -> s { r3 = v }
-putVal v (R R4) = modify $ \s -> s { r4 = v }
-putVal v (R R5) = modify $ \s -> s { r5 = v }
-putVal v (R R6) = modify $ \s -> s { r6 = v }
+putVal v (R R1) = modify $ \s -> s { r1 = seq v v }
+putVal v (R R2) = modify $ \s -> s { r2 = seq v v }
+putVal v (R R3) = modify $ \s -> s { r3 = seq v v }
+putVal v (R R4) = modify $ \s -> s { r4 = seq v v }
+putVal v (R R5) = modify $ \s -> s { r5 = seq v v }
+putVal v (R R6) = modify $ \s -> s { r6 = seq v v }
 
 
 -- | Sample code
