@@ -3,8 +3,8 @@ module Main where
 import qualified Data.ByteString.Char8 as B
 
 import Control.Monad (liftM, mapM_, forM_)
-import Control.Monad.Trans (liftIO)
-import Control.Monad.Trans.State.Strict
+import Control.Monad.IO.Class
+import qualified Control.Monad.Trans.State.Strict as T
 
 import System.IO
 
@@ -40,16 +40,16 @@ type Instruction = (Operator, Operand, Operand)
 
 -- | Monad for programming instructions 
 
-type ASM a = State [Instruction] a
+type ASM a = T.State [Instruction] a
 
 compile :: ASM a -> [Instruction]
-compile c = execState c []
+compile c = T.execState c []
 
 op :: (OperandClass s, OperandClass d) => Operator -> s -> d -> ASM ()
-op cmd src dst = modify $ \s -> s ++ [(cmd, toOperand src, toOperand dst)]
+op cmd src dst = T.modify $ \s -> s ++ [(cmd, toOperand src, toOperand dst)]
 
 pos :: ASM Int
-pos = liftM length get
+pos = liftM length T.get
 
 nop :: ASM Int
 nop = do { p <- pos; op NOP () (); return p}
@@ -57,8 +57,8 @@ nop = do { p <- pos; op NOP () (); return p}
 putOp :: (OperandClass s, OperandClass d) => Int -> Operator -> s -> d -> ASM ()
 putOp p cmd src dst = do
     let instr = (cmd, toOperand src, toOperand dst)
-    (before,after) <- liftM (splitAt p) get 
-    put $ before ++ instr : tail after
+    (before,after) <- liftM (splitAt p) T.get 
+    T.put $ before ++ instr : tail after
 
 -- | Monad for executing instructions
 
@@ -82,10 +82,44 @@ initialRs = Registers
             , r6 = 0
             }
 
-type CPU a = StateT Registers IO a
+-- type CPU a = StateT Registers IO a
+
+newtype CPU a = CPU { runCPU :: Registers -> IO (Registers, a) }
+
+instance Monad CPU where
+   return = retCPU
+   (>>=)  = bindCPU
+
+instance MonadIO CPU where
+   liftIO f = CPU $ \s -> f >>= \x -> return (s, x)
+
+retCPU :: a -> CPU a
+{-# INLINE retCPU #-}
+retCPU x = CPU $ \s -> return (s, x)
+
+bindCPU :: CPU a -> (a -> CPU b) -> CPU b
+{-# INLINE bindCPU #-}
+bindCPU m f = CPU $ \s -> do (s', a) <- runCPU m s
+                             runCPU (f a) s'
+
+get :: CPU Registers
+{-# INLINE get #-}
+get = CPU $ \s -> return $! (s, s)
+
+gets :: (Registers -> a) -> CPU a
+{-# INLINE gets #-}
+gets f = get >>= \s -> return $! f s
+
+put :: Registers -> CPU ()
+{-# INLINE put #-}
+put s = CPU $ \_ -> return (s, ())
+
+modify :: (Registers -> Registers) -> CPU ()
+{-# INLINE modify #-}
+modify f = get >>= \s -> let s' = f s in put $! s'
 
 execute ::Registers -> [Instruction] -> IO Registers
-execute rs code = execStateT (exec code) rs
+execute rs code = runCPU (exec code) rs >>= \(r, _) -> return r 
   where
    {-# INLINE exec #-}
    exec ((JMP, I pos, _    ):is) = {-# SCC "JMP" #-} exec $! drop pos code
