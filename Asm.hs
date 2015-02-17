@@ -87,15 +87,16 @@ type CPU a = StateT Registers IO a
 execute ::Registers -> [Instruction] -> IO Registers
 execute rs code = execStateT (exec code) rs
   where
-   exec ((JMP, I pos, _    ):is) = {-# SCC "JMP" #-} exec $ drop pos code
+   {-# INLINE exec #-}
+   exec ((JMP, I pos, _    ):is) = {-# SCC "JMP" #-} exec $! drop pos code
    exec ((JMF,   reg, I pos):is) = {-# SCC "JMF" #-} readVal reg >>= \v ->
-                                                     exec $ if toBool v
-                                                            then is
-                                                            else drop pos code
+                                                     exec $! if toBool v
+                                                             then is
+                                                             else drop pos code
    exec ((JMT,   reg, I pos):is) = {-# SCC "JMT" #-} readVal reg >>= \v ->
-                                                     exec $ if toBool v
-                                                            then drop pos code
-                                                            else is
+                                                     exec $! if toBool v
+                                                             then drop pos code
+                                                             else is
    exec ((ins,   src,   dst):is) = {-# SCC "OP"  #-} execOP ins src dst >> exec is
    exec []                       = return ()
 
@@ -110,7 +111,7 @@ execOP EQUAL src dst = {-# SCC "EQUAL" #-} logic EQUAL src dst
 execOP AND   src dst = {-# SCC "AND"   #-} logic AND   src dst
 execOP OR    src dst = {-# SCC "OR"    #-} logic OR    src dst
 execOP NOT   src dst = {-# SCC "NOT"   #-} logic NOT   src dst
-execOP MOV   src dst = {-# SCC "MOV"   #-} readVal src >>= \v -> putVal v dst
+execOP MOV   src dst = {-# SCC "MOV"   #-} readVal src >>= \v -> putVal dst $! v
 execOP PRN   src _   = {-# SCC "PRN"   #-} readVal src >>= \v -> liftIO $ print v 
 
 arith :: Operator -> Operand -> Operand -> CPU ()
@@ -119,10 +120,10 @@ arith op src dst = do
     v1 <- readVal src
     v2 <- readVal dst
     case op of
-       ADD -> putVal (v2 + v1) dst
-       SUB -> putVal (v2 - v1) dst
-       MUL -> putVal (v2 * v1) dst
-       DIV -> putVal (v2 / v1) dst
+       ADD -> putVal dst $! v2 + v1
+       SUB -> putVal dst $! v2 - v1
+       MUL -> putVal dst $! v2 * v1
+       DIV -> putVal dst $! v2 / v1
 
 logic :: Operator -> Operand -> Operand -> CPU ()
 {-# INLINE logic #-}
@@ -130,11 +131,11 @@ logic op src dst = do
      v1 <- readVal src
      v2 <- readVal dst
      case op of
-        LESS  -> putVal (fromBool $ v2 <  v1) dst
-        EQUAL -> putVal (fromBool $ v2 == v1) dst
-        AND   -> putVal (fromBool $ toBool v1 && toBool v2) dst
-        OR    -> putVal (fromBool $ toBool v1 && toBool v2) dst
-        NOT   -> putVal (fromBool . not . toBool $ v1) dst
+        LESS  -> putVal dst $! fromBool $ v2 <  v1
+        EQUAL -> putVal dst $! fromBool $ v2 == v1
+        AND   -> putVal dst $! fromBool $ toBool v1 && toBool v2
+        OR    -> putVal dst $! fromBool $ toBool v1 && toBool v2
+        NOT   -> putVal dst $! fromBool . not . toBool $ v1
 
 fromBool :: Bool -> Double
 {-# INLINE fromBool #-}
@@ -156,14 +157,14 @@ readVal (R R5) = gets r5
 readVal (R R6) = gets r6
 readVal (V v)  = return v
 
-putVal :: Double -> Operand -> CPU ()
+putVal :: Operand -> Double -> CPU ()
 {-# INLINE putVal #-}
-putVal v (R R1) = modify $ \s -> s { r1 = seq v v }
-putVal v (R R2) = modify $ \s -> s { r2 = seq v v }
-putVal v (R R3) = modify $ \s -> s { r3 = seq v v }
-putVal v (R R4) = modify $ \s -> s { r4 = seq v v }
-putVal v (R R5) = modify $ \s -> s { r5 = seq v v }
-putVal v (R R6) = modify $ \s -> s { r6 = seq v v }
+putVal (R R1) v = modify $ \s -> s { r1 = v }
+putVal (R R2) v = modify $ \s -> s { r2 = v }
+putVal (R R3) v = modify $ \s -> s { r3 = v }
+putVal (R R4) v = modify $ \s -> s { r4 = v }
+putVal (R R5) v = modify $ \s -> s { r5 = v }
+putVal (R R6) v = modify $ \s -> s { r6 = v }
 
 
 -- | Sample code
