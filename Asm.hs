@@ -8,6 +8,7 @@ import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.State.Strict
 import           Data.Sequence (Seq, ViewL(..), (<|), (|>), (><))
 import qualified Data.Sequence as Seq
+import Data.Foldable (toList)
 
 #ifdef CRI
 import Criterion.Main
@@ -47,8 +48,8 @@ type Instruction = (Operator, Operand, Operand)
 
 type ASM a = State (Seq Instruction) a
 
-compile :: ASM a -> (Seq Instruction)
-compile c = execState c Seq.empty
+compile :: ASM a -> [Instruction]
+compile c = toList $ execState c Seq.empty
 
 op :: (OperandClass s, OperandClass d) => Operator -> s -> d -> ASM ()
 op cmd src dst = modify $ \s -> s |> (cmd, toOperand src, toOperand dst)
@@ -89,22 +90,21 @@ initialRs = Registers
 
 type CPU a = StateT Registers IO a
 
-execute ::Registers -> Seq Instruction -> IO Registers
+execute ::Registers -> [Instruction] -> IO Registers
 execute rs code = execStateT (exec code) rs
   where
    {-# INLINE exec #-}
-   exec s = case Seq.viewl s of
-     EmptyL  -> return ()
-     i :< is -> run i >>= exec
+   exec []     = return ()
+   exec (i:is) = run i >>= exec
        where
-         run (JMP, I pos, _    ) = {-# SCC "JMP" #-} return $! Seq.drop pos code
+         run (JMP, I pos, _    ) = {-# SCC "JMP" #-} return $! drop pos code
          run (JMF,   reg, I pos) = {-# SCC "JMF" #-} readVal reg >>= \v ->
                                                        return $! if toBool v
                                                                  then is
-                                                                 else Seq.drop pos code
+                                                                 else drop pos code
          run (JMT,   reg, I pos) = {-# SCC "JMT" #-} readVal reg >>= \v ->
                                                            return $! if toBool v
-                                                                     then Seq.drop pos code
+                                                                     then drop pos code
                                                                      else is
          run ((ins,   src,   dst)) = {-# SCC "OP"  #-} execOP ins src dst >> return is
 
