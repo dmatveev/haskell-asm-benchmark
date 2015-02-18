@@ -1,4 +1,4 @@
-{-# LANGUAGE RecursiveDo #-}
+{-# LANGUAGE RecursiveDo, CPP #-}
 module Main where
 
 import qualified Data.ByteString.Char8 as B
@@ -9,6 +9,9 @@ import Control.Monad.Trans.State.Strict
 import           Data.Sequence (Seq, ViewL(..), (<|), (|>), (><))
 import qualified Data.Sequence as Seq
 
+#ifdef CRI
+import Criterion.Main
+#endif
 import System.IO
 
 -- | Definitions
@@ -193,12 +196,20 @@ heron = mdo op MOV (V 1) R5
             op ADD (V 1) R3
             op JMP (I iterStart) ()
             loopEnd <- pos
-            op PRN R6 ()
+            return ()
+            -- op PRN R6 ()
 
 
+#ifdef CRI
+main :: IO ()
+main = defaultMain [
+         bench "10000" $ nfIO $ fmap r6 $ execute initialRs {r1=10000, r2=20} (compile heron)
+       ]
+#else
 -- | Test
 main :: IO ()
 main = do
   let h = compile heron
   input <- {-# SCC "READ" #-} liftM (map (read . B.unpack) . B.words) $ B.hGetContents stdin
   forM_ input $ \i -> {-# SCC "ITER" #-} execute (initialRs {r1 = i, r2 = 20 }) h 
+#endif
