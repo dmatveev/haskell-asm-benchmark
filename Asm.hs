@@ -68,12 +68,12 @@ putOp p cmd src dst = do
 -- | Monad for executing instructions
 
 data Registers = Registers
-               { r1 :: !Double
-               , r2 :: !Double
-               , r3 :: !Double
-               , r4 :: !Double
-               , r5 :: !Double
-               , r6 :: !Double
+               { r1 :: {-# UNPACK #-} !Double
+               , r2 :: {-# UNPACK #-} !Double
+               , r3 :: {-# UNPACK #-} !Double
+               , r4 :: {-# UNPACK #-} !Double
+               , r5 :: {-# UNPACK #-} !Double
+               , r6 :: {-# UNPACK #-} !Double
                } deriving (Show)
 
 initialRs :: Registers
