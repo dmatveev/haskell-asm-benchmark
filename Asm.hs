@@ -5,6 +5,8 @@ import qualified Data.ByteString.Char8 as B
 import Control.Monad (liftM, mapM_, forM_)
 import Control.Monad.Trans (liftIO)
 import Control.Monad.Trans.State.Strict
+import           Data.Sequence (Seq, ViewL(..), (<|), (|>), (><))
+import qualified Data.Sequence as Seq
 
 import System.IO
 
@@ -37,19 +39,18 @@ data Operand = R !Register | V !Double | I !Int | N
 
 type Instruction = (Operator, Operand, Operand) 
 
-
 -- | Monad for programming instructions 
 
-type ASM a = State [Instruction] a
+type ASM a = State (Seq Instruction) a
 
-compile :: ASM a -> [Instruction]
-compile c = execState c []
+compile :: ASM a -> (Seq Instruction)
+compile c = execState c Seq.empty
 
 op :: (OperandClass s, OperandClass d) => Operator -> s -> d -> ASM ()
-op cmd src dst = modify $ \s -> s ++ [(cmd, toOperand src, toOperand dst)]
+op cmd src dst = modify $ \s -> s |> (cmd, toOperand src, toOperand dst)
 
 pos :: ASM Int
-pos = liftM length get
+pos = liftM Seq.length get
 
 nop :: ASM Int
 nop = do { p <- pos; op NOP () (); return p}
@@ -57,8 +58,8 @@ nop = do { p <- pos; op NOP () (); return p}
 putOp :: (OperandClass s, OperandClass d) => Int -> Operator -> s -> d -> ASM ()
 putOp p cmd src dst = do
     let instr = (cmd, toOperand src, toOperand dst)
-    (before,after) <- liftM (splitAt p) get 
-    put $ before ++ instr : tail after
+    (before,after) <- liftM (Seq.splitAt p) get
+    put $ before >< instr <| Seq.drop 1 after
 
 -- | Monad for executing instructions
 
@@ -84,21 +85,24 @@ initialRs = Registers
 
 type CPU a = StateT Registers IO a
 
-execute ::Registers -> [Instruction] -> IO Registers
+execute ::Registers -> Seq Instruction -> IO Registers
 execute rs code = execStateT (exec code) rs
   where
    {-# INLINE exec #-}
-   exec ((JMP, I pos, _    ):is) = {-# SCC "JMP" #-} exec $! drop pos code
-   exec ((JMF,   reg, I pos):is) = {-# SCC "JMF" #-} readVal reg >>= \v ->
-                                                     exec $! if toBool v
-                                                             then is
-                                                             else drop pos code
-   exec ((JMT,   reg, I pos):is) = {-# SCC "JMT" #-} readVal reg >>= \v ->
-                                                     exec $! if toBool v
-                                                             then drop pos code
-                                                             else is
-   exec ((ins,   src,   dst):is) = {-# SCC "OP"  #-} execOP ins src dst >> exec is
-   exec []                       = return ()
+   exec s = case Seq.viewl s of
+     EmptyL  -> return ()
+     i :< is -> run i >>= exec
+       where
+         run (JMP, I pos, _    ) = {-# SCC "JMP" #-} return $! Seq.drop pos code
+         run (JMF,   reg, I pos) = {-# SCC "JMF" #-} readVal reg >>= \v ->
+                                                       return $! if toBool v
+                                                                 then is
+                                                                 else Seq.drop pos code
+         run (JMT,   reg, I pos) = {-# SCC "JMT" #-} readVal reg >>= \v ->
+                                                           return $! if toBool v
+                                                                     then Seq.drop pos code
+                                                                     else is
+         run ((ins,   src,   dst)) = {-# SCC "OP"  #-} execOP ins src dst >> return is
 
 execOP :: Operator -> Operand -> Operand -> CPU ()
 {-# INLINE execOP #-}
