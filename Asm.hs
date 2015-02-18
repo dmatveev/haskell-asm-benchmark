@@ -79,7 +79,6 @@ data Registers = Registers
                } deriving (Show)
 
 initialRs :: Registers
-{-# INLINE initialRs #-}
 initialRs = Registers
             { r1 = 0
             , r2 = 0
@@ -101,37 +100,29 @@ instance MonadIO CPU where
    liftIO = lioCPU
 
 retCPU :: a -> CPU a
-{-# INLINE retCPU #-}
 retCPU x = CPU $ \s k -> k x s
 
 bindCPU :: CPU a -> (a -> CPU b) -> CPU b
-{-# INLINE bindCPU #-}
 bindCPU (CPU m) f = CPU $ \s0 k -> m s0 $ \a s1 -> runCPU (f a) s1 k
 
 lioCPU :: IO a -> CPU a
-{-# INLINE lioCPU #-}
 lioCPU f = CPU $ \s k -> f >>= \x -> k x s
 
 get :: CPU Registers
-{-# INLINE get #-}
 get = CPU $ \s k -> k s s
 
 gets :: (Registers -> a) -> CPU a
-{-# INLINE gets #-}
 gets f = get >>= \s -> return $! f s
 
 put :: Registers -> CPU ()
-{-# INLINE put #-}
 put s = CPU $ \_ k -> k () s
 
 modify :: (Registers -> Registers) -> CPU ()
-{-# INLINE modify #-}
 modify f = get >>= \s -> let s' = f s in put $! s'
 
 execute ::Registers -> [Instruction] -> IO Registers
 execute rs code = runCPU (exec code) rs $ \_ s -> return s
   where
-   {-# INLINE exec #-}
    exec []     = return ()
    exec (i:is) = run i >>= exec
        where
@@ -147,7 +138,6 @@ execute rs code = runCPU (exec code) rs $ \_ s -> return s
          run ((ins,   src,   dst)) = {-# SCC "OP"  #-} execOP ins src dst >> return is
 
 execOP :: Operator -> Operand -> Operand -> CPU ()
-{-# INLINE execOP #-}
 execOP ADD   src dst = {-# SCC "ADD"   #-} arith ADD   src dst
 execOP SUB   src dst = {-# SCC "SUB"   #-} arith SUB   src dst
 execOP MUL   src dst = {-# SCC "MUL"   #-} arith MUL   src dst
@@ -161,7 +151,6 @@ execOP MOV   src dst = {-# SCC "MOV"   #-} readVal src >>= \v -> putVal dst $! v
 execOP PRN   src _   = {-# SCC "PRN"   #-} readVal src >>= \v -> liftIO $ print v 
 
 arith :: Operator -> Operand -> Operand -> CPU ()
-{-# INLINE arith #-}
 arith op src dst = do
     v1 <- readVal src
     v2 <- readVal dst
@@ -172,7 +161,6 @@ arith op src dst = do
        DIV -> putVal dst $! v2 / v1
 
 logic :: Operator -> Operand -> Operand -> CPU ()
-{-# INLINE logic #-}
 logic op src dst = do
      v1 <- readVal src
      v2 <- readVal dst
@@ -184,17 +172,14 @@ logic op src dst = do
         NOT   -> putVal dst $! fromBool . not . toBool $ v1
 
 fromBool :: Bool -> Double
-{-# INLINE fromBool #-}
 fromBool True  = 1
 fromBool False = 0
 
 toBool :: Double -> Bool
-{-# INLINE toBool #-}
 toBool 0 = False
 toBool _ = True
 
 readVal :: Operand -> CPU Double
-{-# INLINE readVal #-}
 readVal (R R1) = gets r1
 readVal (R R2) = gets r2
 readVal (R R3) = gets r3
@@ -204,7 +189,6 @@ readVal (R R6) = gets r6
 readVal (V v)  = return v
 
 putVal :: Operand -> Double -> CPU ()
-{-# INLINE putVal #-}
 putVal (R R1) v = modify $ \s -> s { r1 = v }
 putVal (R R2) v = modify $ \s -> s { r2 = v }
 putVal (R R3) v = modify $ \s -> s { r3 = v }
