@@ -10,6 +10,9 @@ import           Data.Sequence (Seq, ViewL(..), (<|), (|>), (><))
 import qualified Data.Sequence as Seq
 import Data.Foldable (toList)
 
+import           Data.Vector (Vector)
+import qualified Data.Vector as V
+
 #ifdef CRI
 import Criterion.Main
 #endif
@@ -48,8 +51,8 @@ type Instruction = (Operator, Operand, Operand)
 
 type ASM a = State (Seq Instruction) a
 
-compile :: ASM a -> [Instruction]
-compile c = toList $ execState c Seq.empty
+compile :: ASM a -> Vector Instruction
+compile c = V.fromList $ toList $ execState c Seq.empty
 
 op :: (OperandClass s, OperandClass d) => Operator -> s -> d -> ASM ()
 op cmd src dst = modify $ \s -> s |> (cmd, toOperand src, toOperand dst)
@@ -88,25 +91,32 @@ initialRs = Registers
             , r6 = 0
             }
 
-type CPU a = StateT Registers IO a
+type CPU a = StateT CPUState IO a
 
-execute ::Registers -> [Instruction] -> IO Registers
-execute rs code = execStateT (exec code) rs
+data CPUState = CPUState { cpuInstr :: {-# UNPACK #-} !Int, cpuRegs :: {-# UNPACK #-} !Registers}
+
+next :: CPU ()
+next = modify (\(CPUState i r) -> CPUState (succ i) r)
+
+execute :: Registers -> Vector Instruction -> IO CPUState
+execute rs code = execStateT (exec code) (CPUState 0 rs)
   where
    {-# INLINE exec #-}
-   exec []     = return ()
-   exec (i:is) = run i >>= exec
-       where
-         run (JMP, I pos, _    ) = {-# SCC "JMP" #-} return $! drop pos code
-         run (JMF,   reg, I pos) = {-# SCC "JMF" #-} readVal reg >>= \v ->
-                                                       return $! if toBool v
-                                                                 then is
-                                                                 else drop pos code
-         run (JMT,   reg, I pos) = {-# SCC "JMT" #-} readVal reg >>= \v ->
-                                                           return $! if toBool v
-                                                                     then drop pos code
-                                                                     else is
-         run ((ins,   src,   dst)) = {-# SCC "OP"  #-} execOP ins src dst >> return is
+   exec s = do
+     CPUState i regs <- get
+     case code V.!? i of
+        Nothing -> return ()
+        Just op -> case op of
+          (JMP, I pos, _    ) -> {-# SCC "JMP" #-} put (CPUState pos regs)
+          (JMF,   reg, I pos) -> {-# SCC "JMF" #-} readVal reg >>= \v ->
+                                    if toBool v 
+                                    then next
+                                    else put (CPUState pos      regs)
+          (JMT,   reg, I pos) -> {-# SCC "JMT" #-} readVal reg >>= \v -> 
+                                    if toBool v
+                                    then put (CPUState pos      regs)
+                                    else next
+          (ins,   src,  dst) -> {-# SCC "OP"  #-} execOP ins src dst >> next
 
 execOP :: Operator -> Operand -> Operand -> CPU ()
 {-# INLINE execOP #-}
@@ -157,22 +167,22 @@ toBool _ = True
 
 readVal :: Operand -> CPU Double
 {-# INLINE readVal #-}
-readVal (R R1) = gets r1
-readVal (R R2) = gets r2
-readVal (R R3) = gets r3
-readVal (R R4) = gets r4
-readVal (R R5) = gets r5
-readVal (R R6) = gets r6
+readVal (R R1) = gets (r1 . cpuRegs)
+readVal (R R2) = gets (r2 . cpuRegs)
+readVal (R R3) = gets (r3 . cpuRegs)
+readVal (R R4) = gets (r4 . cpuRegs)
+readVal (R R5) = gets (r5 . cpuRegs)
+readVal (R R6) = gets (r6 . cpuRegs)
 readVal (V v)  = return v
 
 putVal :: Operand -> Double -> CPU ()
 {-# INLINE putVal #-}
-putVal (R R1) v = modify $ \s -> s { r1 = v }
-putVal (R R2) v = modify $ \s -> s { r2 = v }
-putVal (R R3) v = modify $ \s -> s { r3 = v }
-putVal (R R4) v = modify $ \s -> s { r4 = v }
-putVal (R R5) v = modify $ \s -> s { r5 = v }
-putVal (R R6) v = modify $ \s -> s { r6 = v }
+putVal (R R1) v = modify $ \s -> s { cpuRegs = (cpuRegs s) {r1 = v} }
+putVal (R R2) v = modify $ \s -> s { cpuRegs = (cpuRegs s) {r2 = v} }
+putVal (R R3) v = modify $ \s -> s { cpuRegs = (cpuRegs s) {r3 = v} }
+putVal (R R4) v = modify $ \s -> s { cpuRegs = (cpuRegs s) {r4 = v} }
+putVal (R R5) v = modify $ \s -> s { cpuRegs = (cpuRegs s) {r5 = v} }
+putVal (R R6) v = modify $ \s -> s { cpuRegs = (cpuRegs s) {r6 = v} }
 
 
 -- | Sample code
@@ -203,7 +213,7 @@ heron = mdo op MOV (V 1) R5
 #ifdef CRI
 main :: IO ()
 main = defaultMain [
-         bench "10000" $ nfIO $ fmap r6 $ execute initialRs {r1=10000, r2=20} (compile heron)
+         bench "10000" $ nfIO $ fmap (r6.cpuRegs) $ execute initialRs {r1=10000, r2=20} (compile heron)
        ]
 #else
 -- | Test
