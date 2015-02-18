@@ -1,3 +1,4 @@
+{-# LANGUAGE RecursiveDo #-}
 module Main where
 
 import qualified Data.ByteString.Char8 as B
@@ -178,23 +179,21 @@ putVal (R R6) v = modify $ \s -> s { r6 = v }
 --          r2 - number of iterations
 -- Outputs: r6 - output value
 heron :: ASM ()
-heron = do
-   op MOV (V 1) R5
-   op MOV (V 0) R3
-   iterStart <- pos
-   op MOV R3 R4
-   op EQUAL R2 R4
-   ifFalse <- nop
-   op MOV R1 R6
-   op DIV R5 R6
-   op ADD R5 R6
-   op MUL (V 0.5) R6
-   op MOV R6 R5
-   op ADD (V 1) R3
-   op JMP (I iterStart) ()
-   loopEnd <- pos
-   putOp ifFalse JMT R4 (I loopEnd)
-   op PRN R6 ()
+heron = mdo op MOV (V 1) R5
+            op MOV (V 0) R3
+            iterStart <- pos
+            op MOV R3 R4
+            op EQUAL R2 R4
+            op JMT R4 (I loopEnd)
+            op MOV R1 R6
+            op DIV R5 R6
+            op ADD R5 R6
+            op MUL (V 0.5) R6
+            op MOV R6 R5
+            op ADD (V 1) R3
+            op JMP (I iterStart) ()
+            loopEnd <- pos
+            op PRN R6 ()
 
 
 -- | Test
