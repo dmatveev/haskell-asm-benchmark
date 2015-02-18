@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RankNTypes, RecursiveDo, CPP #-}
 
 module Main where
 
@@ -7,7 +7,13 @@ import qualified Data.ByteString.Char8 as B
 import Control.Monad (liftM, mapM_, forM_)
 import Control.Monad.IO.Class
 import qualified Control.Monad.Trans.State.Strict as T
+import           Data.Sequence (Seq, ViewL(..), (<|), (|>), (><))
+import qualified Data.Sequence as Seq
+import Data.Foldable (toList)
 
+#ifdef CRI
+import Criterion.Main
+#endif
 import System.IO
 
 -- | Definitions
@@ -39,19 +45,18 @@ data Operand = R !Register | V !Double | I !Int | N
 
 type Instruction = (Operator, Operand, Operand) 
 
-
 -- | Monad for programming instructions 
 
-type ASM a = T.State [Instruction] a
+type ASM a = T.State (Seq Instruction) a
 
 compile :: ASM a -> [Instruction]
-compile c = T.execState c []
+compile c = toList $ T.execState c Seq.empty
 
 op :: (OperandClass s, OperandClass d) => Operator -> s -> d -> ASM ()
-op cmd src dst = T.modify $ \s -> s ++ [(cmd, toOperand src, toOperand dst)]
+op cmd src dst = T.modify $ \s -> s |> (cmd, toOperand src, toOperand dst)
 
 pos :: ASM Int
-pos = liftM length T.get
+pos = liftM Seq.length T.get
 
 nop :: ASM Int
 nop = do { p <- pos; op NOP () (); return p}
@@ -59,18 +64,18 @@ nop = do { p <- pos; op NOP () (); return p}
 putOp :: (OperandClass s, OperandClass d) => Int -> Operator -> s -> d -> ASM ()
 putOp p cmd src dst = do
     let instr = (cmd, toOperand src, toOperand dst)
-    (before,after) <- liftM (splitAt p) T.get 
-    T.put $ before ++ instr : tail after
+    (before,after) <- liftM (Seq.splitAt p) T.get
+    T.put $ before >< instr <| Seq.drop 1 after
 
 -- | Monad for executing instructions
 
 data Registers = Registers
-               { r1 :: !Double
-               , r2 :: !Double
-               , r3 :: !Double
-               , r4 :: !Double
-               , r5 :: !Double
-               , r6 :: !Double
+               { r1 :: {-# UNPACK #-} !Double
+               , r2 :: {-# UNPACK #-} !Double
+               , r3 :: {-# UNPACK #-} !Double
+               , r4 :: {-# UNPACK #-} !Double
+               , r5 :: {-# UNPACK #-} !Double
+               , r6 :: {-# UNPACK #-} !Double
                } deriving (Show)
 
 initialRs :: Registers
@@ -127,17 +132,19 @@ execute ::Registers -> [Instruction] -> IO Registers
 execute rs code = runCPU (exec code) rs $ \_ s -> return s
   where
    {-# INLINE exec #-}
-   exec ((JMP, I pos, _    ):is) = {-# SCC "JMP" #-} exec $! drop pos code
-   exec ((JMF,   reg, I pos):is) = {-# SCC "JMF" #-} readVal reg >>= \v ->
-                                                     exec $! if toBool v
-                                                             then is
-                                                             else drop pos code
-   exec ((JMT,   reg, I pos):is) = {-# SCC "JMT" #-} readVal reg >>= \v ->
-                                                     exec $! if toBool v
-                                                             then drop pos code
-                                                             else is
-   exec ((ins,   src,   dst):is) = {-# SCC "OP"  #-} execOP ins src dst >> exec is
-   exec []                       = return ()
+   exec []     = return ()
+   exec (i:is) = run i >>= exec
+       where
+         run (JMP, I pos, _    ) = {-# SCC "JMP" #-} return $! drop pos code
+         run (JMF,   reg, I pos) = {-# SCC "JMF" #-} readVal reg >>= \v ->
+                                                       return $! if toBool v
+                                                                 then is
+                                                                 else drop pos code
+         run (JMT,   reg, I pos) = {-# SCC "JMT" #-} readVal reg >>= \v ->
+                                                           return $! if toBool v
+                                                                     then drop pos code
+                                                                     else is
+         run ((ins,   src,   dst)) = {-# SCC "OP"  #-} execOP ins src dst >> return is
 
 execOP :: Operator -> Operand -> Operand -> CPU ()
 {-# INLINE execOP #-}
@@ -213,28 +220,34 @@ putVal (R R6) v = modify $ \s -> s { r6 = v }
 --          r2 - number of iterations
 -- Outputs: r6 - output value
 heron :: ASM ()
-heron = do
-   op MOV (V 1) R5
-   op MOV (V 0) R3
-   iterStart <- pos
-   op MOV R3 R4
-   op EQUAL R2 R4
-   ifFalse <- nop
-   op MOV R1 R6
-   op DIV R5 R6
-   op ADD R5 R6
-   op MUL (V 0.5) R6
-   op MOV R6 R5
-   op ADD (V 1) R3
-   op JMP (I iterStart) ()
-   loopEnd <- pos
-   putOp ifFalse JMT R4 (I loopEnd)
-   op PRN R6 ()
+heron = mdo op MOV (V 1) R5
+            op MOV (V 0) R3
+            iterStart <- pos
+            op MOV R3 R4
+            op EQUAL R2 R4
+            op JMT R4 (I loopEnd)
+            op MOV R1 R6
+            op DIV R5 R6
+            op ADD R5 R6
+            op MUL (V 0.5) R6
+            op MOV R6 R5
+            op ADD (V 1) R3
+            op JMP (I iterStart) ()
+            loopEnd <- pos
+            return ()
+            -- op PRN R6 ()
 
 
+#ifdef CRI
+main :: IO ()
+main = defaultMain [
+         bench "10000" $ nfIO $ fmap r6 $ execute initialRs {r1=10000, r2=20} (compile heron)
+       ]
+#else
 -- | Test
 main :: IO ()
 main = do
   let h = compile heron
   input <- {-# SCC "READ" #-} liftM (map (read . B.unpack) . B.words) $ B.hGetContents stdin
   forM_ input $ \i -> {-# SCC "ITER" #-} execute (initialRs {r1 = i, r2 = 20 }) h 
+#endif
