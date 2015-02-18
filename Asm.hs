@@ -99,24 +99,26 @@ next :: CPU ()
 next = modify (\(CPUState i r) -> CPUState (succ i) r)
 
 execute :: Registers -> Vector Instruction -> IO CPUState
-execute rs code = execStateT (exec code) (CPUState 0 rs)
+execute rs code = execStateT exec (CPUState 0 rs)
   where
    {-# INLINE exec #-}
-   exec s = do
+   exec = do
      CPUState i regs <- get
      case code V.!? i of
         Nothing -> return ()
-        Just op -> case op of
-          (JMP, I pos, _    ) -> {-# SCC "JMP" #-} put (CPUState pos regs)
-          (JMF,   reg, I pos) -> {-# SCC "JMF" #-} readVal reg >>= \v ->
-                                    if toBool v 
-                                    then next
-                                    else put (CPUState pos      regs)
-          (JMT,   reg, I pos) -> {-# SCC "JMT" #-} readVal reg >>= \v -> 
-                                    if toBool v
-                                    then put (CPUState pos      regs)
-                                    else next
-          (ins,   src,  dst) -> {-# SCC "OP"  #-} execOP ins src dst >> next
+        Just op -> do
+          case op of
+            (JMP, I pos, _    ) -> {-# SCC "JMP" #-} put (CPUState pos regs)
+            (JMF,   reg, I pos) -> {-# SCC "JMF" #-} readVal reg >>= \v ->
+                                      if toBool v 
+                                      then next 
+                                      else put (CPUState pos      regs)
+            (JMT,   reg, I pos) -> {-# SCC "JMT" #-} readVal reg >>= \v -> 
+                                      if toBool v
+                                      then put (CPUState pos      regs)
+                                      else next
+            (ins,   src,  dst) -> {-# SCC "OP"  #-} execOP ins src dst >> next
+          exec
 
 execOP :: Operator -> Operand -> Operand -> CPU ()
 {-# INLINE execOP #-}
@@ -206,8 +208,7 @@ heron = mdo op MOV (V 1) R5
             op ADD (V 1) R3
             op JMP (I iterStart) ()
             loopEnd <- pos
-            return ()
-            -- op PRN R6 ()
+            op PRN R6 ()
 
 
 #ifdef CRI
