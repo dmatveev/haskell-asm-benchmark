@@ -3,8 +3,7 @@ module Main where
 
 import qualified Data.ByteString.Char8 as B
 
-import Control.Monad (liftM, mapM_, forM_)
-import Control.Monad.Trans (liftIO)
+import Control.Monad (liftM, forM_)
 import Control.Monad.Trans.State.Strict
 import           Data.Sequence (Seq, ViewL(..), (<|), (|>), (><))
 import qualified Data.Sequence as Seq
@@ -88,62 +87,62 @@ initialRs = Registers
             , r6 = 0
             }
 
-type CPU a = StateT Registers IO a
+type CPU a = Registers -> IO a
 
 execute :: Registers -> [Instruction] -> IO Registers
-execute rs code = execStateT (exec code) rs
+execute rs code = exec rs code
   where
    {-# INLINE exec #-}
-   exec []       = return ()
-   exec (op:ops) = case op of
-      (JMP, I pos, _    ) -> {-# SCC "JMP" #-} exec $ drop pos code
-      (JMF,   reg, I pos) -> {-# SCC "JMF" #-} readVal reg >>= \v -> exec $ 
+   exec r []       = return r
+   exec r (op:ops) = case op of
+      (JMP, I pos, _    ) -> {-# SCC "JMP" #-} exec r $ drop pos code
+      (JMF,   reg, I pos) -> {-# SCC "JMF" #-} readVal reg r >>= \v -> exec r $ 
                                                  if toBool v 
                                                  then ops
                                                  else drop pos code
-      (JMT,   reg, I pos) -> {-# SCC "JMT" #-} readVal reg >>= \v -> exec $
+      (JMT,   reg, I pos) -> {-# SCC "JMT" #-} readVal reg r >>= \v -> exec r $
                                                  if toBool v
                                                  then drop pos code
                                                  else ops
-      (ins,   src,  dst) -> {-# SCC "OP"  #-} execOP ins src dst >> exec ops
+      (ins,   src,  dst) -> {-# SCC "OP"  #-} execOP ins src dst r >>= \r' -> exec r' ops
 
 
-execOP :: Operator -> Operand -> Operand -> CPU ()
+execOP :: Operator -> Operand -> Operand -> CPU Registers
 {-# INLINE execOP #-}
-execOP ADD   src dst = {-# SCC "ADD"   #-} arith ADD   src dst
-execOP SUB   src dst = {-# SCC "SUB"   #-} arith SUB   src dst
-execOP MUL   src dst = {-# SCC "MUL"   #-} arith MUL   src dst
-execOP DIV   src dst = {-# SCC "DIV"   #-} arith DIV   src dst
-execOP LESS  src dst = {-# SCC "LESS"  #-} logic LESS  src dst
-execOP EQUAL src dst = {-# SCC "EQUAL" #-} logic EQUAL src dst
-execOP AND   src dst = {-# SCC "AND"   #-} logic AND   src dst
-execOP OR    src dst = {-# SCC "OR"    #-} logic OR    src dst
-execOP NOT   src dst = {-# SCC "NOT"   #-} logic NOT   src dst
-execOP MOV   src dst = {-# SCC "MOV"   #-} readVal src >>= \v -> putVal dst $! v
-execOP PRN   src _   = {-# SCC "PRN"   #-} readVal src >>= \v -> liftIO $ print v 
+execOP ADD   src dst r = {-# SCC "ADD"   #-} arith ADD   src dst r
+execOP SUB   src dst r = {-# SCC "SUB"   #-} arith SUB   src dst r
+execOP MUL   src dst r = {-# SCC "MUL"   #-} arith MUL   src dst r
+execOP DIV   src dst r = {-# SCC "DIV"   #-} arith DIV   src dst r
+execOP LESS  src dst r = {-# SCC "LESS"  #-} logic LESS  src dst r
+execOP EQUAL src dst r = {-# SCC "EQUAL" #-} logic EQUAL src dst r
+execOP AND   src dst r = {-# SCC "AND"   #-} logic AND   src dst r
+execOP OR    src dst r = {-# SCC "OR"    #-} logic OR    src dst r
+execOP NOT   src dst r = {-# SCC "NOT"   #-} logic NOT   src dst r
+execOP MOV   src dst r = {-# SCC "MOV"   #-} readVal src r >>= \v -> putVal r dst $! v
+execOP PRN   src _   r = {-# SCC "PRN"   #-} readVal src r >>= \v -> print v >> return r 
 
-arith :: Operator -> Operand -> Operand -> CPU ()
+arith :: Operator -> Operand -> Operand -> CPU Registers
 {-# INLINE arith #-}
-arith op src dst = do
-    v1 <- readVal src
-    v2 <- readVal dst
+arith op src dst r = do
+    v1 <- readVal src r
+    v2 <- readVal dst r
     case op of
-       ADD -> putVal dst $! v2 + v1
-       SUB -> putVal dst $! v2 - v1
-       MUL -> putVal dst $! v2 * v1
-       DIV -> putVal dst $! v2 / v1
+       ADD -> putVal r dst $! v2 + v1
+       SUB -> putVal r dst $! v2 - v1
+       MUL -> putVal r dst $! v2 * v1
+       DIV -> putVal r dst $! v2 / v1
 
-logic :: Operator -> Operand -> Operand -> CPU ()
+logic :: Operator -> Operand -> Operand -> CPU Registers
 {-# INLINE logic #-}
-logic op src dst = do
-     v1 <- readVal src
-     v2 <- readVal dst
+logic op src dst r = do
+     v1 <- readVal src r 
+     v2 <- readVal dst r
      case op of
-        LESS  -> putVal dst $! fromBool $ v2 <  v1
-        EQUAL -> putVal dst $! fromBool $ v2 == v1
-        AND   -> putVal dst $! fromBool $ toBool v1 && toBool v2
-        OR    -> putVal dst $! fromBool $ toBool v1 && toBool v2
-        NOT   -> putVal dst $! fromBool . not . toBool $ v1
+        LESS  -> putVal r dst $! fromBool $ v2 <  v1
+        EQUAL -> putVal r dst $! fromBool $ v2 == v1
+        AND   -> putVal r dst $! fromBool $ toBool v1 && toBool v2
+        OR    -> putVal r dst $! fromBool $ toBool v1 && toBool v2
+        NOT   -> putVal r dst $! fromBool . not . toBool $ v1
 
 fromBool :: Bool -> Double
 {-# INLINE fromBool #-}
@@ -157,22 +156,22 @@ toBool _ = True
 
 readVal :: Operand -> CPU Double
 {-# INLINE readVal #-}
-readVal (R R1) = gets r1
-readVal (R R2) = gets r2
-readVal (R R3) = gets r3
-readVal (R R4) = gets r4
-readVal (R R5) = gets r5
-readVal (R R6) = gets r6
-readVal (V v)  = return v
+readVal (R R1) r = return $! r1 r
+readVal (R R2) r = return $! r2 r
+readVal (R R3) r = return $! r3 r
+readVal (R R4) r = return $! r4 r
+readVal (R R5) r = return $! r5 r
+readVal (R R6) r = return $! r6 r
+readVal (V v)  _ = return $! v
 
-putVal :: Operand -> Double -> CPU ()
+putVal :: Registers -> Operand -> Double -> IO Registers
 {-# INLINE putVal #-}
-putVal (R R1) v = modify $ \s -> s { r1 = v }
-putVal (R R2) v = modify $ \s -> s { r2 = v }
-putVal (R R3) v = modify $ \s -> s { r3 = v }
-putVal (R R4) v = modify $ \s -> s { r4 = v }
-putVal (R R5) v = modify $ \s -> s { r5 = v }
-putVal (R R6) v = modify $ \s -> s { r6 = v }
+putVal r (R R1) v = return $! r { r1 = v }
+putVal r (R R2) v = return $! r { r2 = v }
+putVal r (R R3) v = return $! r { r3 = v }
+putVal r (R R4) v = return $! r { r4 = v }
+putVal r (R R5) v = return $! r { r5 = v }
+putVal r (R R6) v = return $! r { r6 = v }
 
 
 -- | Sample code
