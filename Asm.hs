@@ -82,7 +82,6 @@ data Registers = Registers
                } deriving (Show)
 
 initialRs :: Registers
-{-# INLINE initialRs #-}
 initialRs = Registers
             { r1 = 0
             , r2 = 0
@@ -96,9 +95,7 @@ type CPU a = StateT Registers IO a
 
 execute :: Registers -> [Instruction] -> IO Registers
 execute rs code = execStateT rs (exec code)
-
   where
-   {-# INLINE exec #-}
    exec []       = return ()
    exec (op:ops) = case op of
       (JMP, I pos, _    ) -> {-# SCC "JMP" #-} exec $ drop pos code
@@ -114,7 +111,6 @@ execute rs code = execStateT rs (exec code)
 
 
 execOP :: Operator -> Operand -> Operand -> CPU ()
-{-# INLINE execOP #-}
 execOP ADD   src dst = {-# SCC "ADD"   #-} arith ADD   src dst
 execOP SUB   src dst = {-# SCC "SUB"   #-} arith SUB   src dst
 execOP MUL   src dst = {-# SCC "MUL"   #-} arith MUL   src dst
@@ -128,7 +124,6 @@ execOP MOV   src dst = {-# SCC "MOV"   #-} readVal src >>= \v -> putVal dst $! v
 execOP PRN   src _   = {-# SCC "PRN"   #-} readVal src >>= \v -> liftIO $ print v 
 
 arith :: Operator -> Operand -> Operand -> CPU ()
-{-# INLINE arith #-}
 arith op src dst = do
     v1 <- readVal src
     v2 <- readVal dst
@@ -139,7 +134,6 @@ arith op src dst = do
        DIV -> putVal dst $! v2 / v1
 
 logic :: Operator -> Operand -> Operand -> CPU ()
-{-# INLINE logic #-}
 logic op src dst = do
      v1 <- readVal src
      v2 <- readVal dst
@@ -151,19 +145,16 @@ logic op src dst = do
         NOT   -> putVal dst $! fromBool . not . toBool $ v1
 
 fromBool :: Bool -> Double
-{-# INLINE fromBool #-}
 fromBool True  = 1
 fromBool False = 0
 
 toBool :: Double -> Bool
-{-# INLINE toBool #-}
 toBool 0 = False
 toBool _ = True
 
 gets f = liftM f get
 
 readVal :: Operand -> CPU Double
-{-# INLINE readVal #-}
 readVal (R R1) = gets r1
 readVal (R R2) = gets r2
 readVal (R R3) = gets r3
@@ -173,7 +164,6 @@ readVal (R R6) = gets r6
 readVal (V v)  = return v
 
 putVal :: Operand -> Double -> CPU ()
-{-# INLINE putVal #-}
 putVal (R R1) v = modify $ \s -> s { r1 = v }
 putVal (R R2) v = modify $ \s -> s { r2 = v }
 putVal (R R3) v = modify $ \s -> s { r3 = v }
