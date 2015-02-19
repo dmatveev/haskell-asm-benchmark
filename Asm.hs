@@ -128,19 +128,19 @@ execute ::Registers -> [Instruction] -> IO Registers
 execute rs code = runCPU (exec code) rs >>= \(r, _) -> return r 
   where
    {-# INLINE exec #-}
-   exec []     = return ()
-   exec (i:is) = run i >>= exec
-       where
-         run (JMP, I pos, _    ) = {-# SCC "JMP" #-} return $! drop pos code
-         run (JMF,   reg, I pos) = {-# SCC "JMF" #-} readVal reg >>= \v ->
-                                                       return $! if toBool v
-                                                                 then is
-                                                                 else drop pos code
-         run (JMT,   reg, I pos) = {-# SCC "JMT" #-} readVal reg >>= \v ->
-                                                           return $! if toBool v
-                                                                     then drop pos code
-                                                                     else is
-         run ((ins,   src,   dst)) = {-# SCC "OP"  #-} execOP ins src dst >> return is
+   exec []       = return ()
+   exec (op:ops) = case op of
+      (JMP, I pos, _    ) -> {-# SCC "JMP" #-} exec $ drop pos code
+      (JMF,   reg, I pos) -> {-# SCC "JMF" #-} readVal reg >>= \v -> exec $ 
+                                                 if toBool v 
+                                                 then ops
+                                                 else drop pos code
+      (JMT,   reg, I pos) -> {-# SCC "JMT" #-} readVal reg >>= \v -> exec $
+                                                 if toBool v
+                                                 then drop pos code
+                                                 else ops
+      (ins,   src,  dst) -> {-# SCC "OP"  #-} execOP ins src dst >> exec ops
+
 
 execOP :: Operator -> Operand -> Operand -> CPU ()
 {-# INLINE execOP #-}
@@ -230,14 +230,13 @@ heron = mdo op MOV (V 1) R5
             op ADD (V 1) R3
             op JMP (I iterStart) ()
             loopEnd <- pos
-            return ()
-            -- op PRN R6 ()
+            op PRN R6 ()
 
 
 #ifdef CRI
 main :: IO ()
 main = defaultMain [
-         bench "10000" $ nfIO $ fmap r6 $ execute initialRs {r1=10000, r2=20} (compile heron)
+         bench "10000" $ nfIO $ fmap (r6.cpuRegs) $ execute initialRs {r1=10000, r2=20} (compile heron)
        ]
 #else
 -- | Test
